@@ -1,8 +1,8 @@
-"""Python library for debugging java programs. Backed by pyjdwp, a wrapper of
+"""Python library for debugging java programs. Backed by pyjdb, a wrapper of
 the Java Debug Wire Protocol (jdwp)"""
-import pyjdwp
 import threading
 
+import pyjdwp
 
 class Error(Exception):
     """Pyjdb module-level error"""
@@ -31,6 +31,7 @@ class Pyjdb(object):
         # load up runtime metadata like known classes and running threads
         self.__initialize_event_subscriptions()
         self.__initialize_jvm_state()
+        yup = "";
 
     def resume(self):
         with self.__debug_state_lock:
@@ -82,6 +83,7 @@ class Pyjdb(object):
                         self.jdwp.EventKind.CLASS_UNLOAD]:
                     self.__update_class_metadata(event["ClassPrepare"])
                 elif event["eventKind"] == self.jdwp.EventKind.THREAD_START:
+                    # self.__initialize_jvm_state()
                     self.__update_thread_status(event["ThreadStart"]["thread"])
                 elif event["eventKind"] == self.jdwp.EventKind.THREAD_END:
                     self.__update_thread_status(event["ThreadEnd"]["thread"])
@@ -132,9 +134,9 @@ class Pyjdb(object):
                     "name": thread_name,
                     "thread_group_id": thread_group_id}
                 self.__update_thread_status(thread_id)
-            classes = self.jdwp.VirtualMachine.AllClassesWithGeneric()["classes"]
-            for entry in classes:
-                self.__update_class_metadata(entry)
+            # classes = self.jdwp.VirtualMachine.AllClassesWithGeneric()["classes"]
+            # for entry in classes:
+            #     self.__update_class_metadata(entry)
 
     def __update_class_metadata(self, class_entry):
         if class_entry["signature"] in self.class_blacklist:
@@ -150,14 +152,14 @@ class Pyjdb(object):
         try:
             cls["source_file"] = self.jdwp.ReferenceType.SourceFile({
                 "refType": cls["typeID"]})["sourceFile"]
-        except pyjdwp.Error as e:
+        except pyjdwp.pyjdwp.Error as e:
             # No source info for class
             return
         source_file = cls["source_file"]
         for method_entry in cls["methods"]:
             try:
                 self.__fetch_method_info(cls, method_entry)
-            except pyjdwp.Error as e:
+            except pyjdwp.pyjdwp.Error as e:
                 continue
         # we save these to notify outside of the lock we're holding
         to_notify = []
@@ -190,9 +192,14 @@ class Pyjdb(object):
                     (cls["typeID"], method_id, line_code_index))
 
     def __update_thread_status(self, thread_id):
+
+        if thread_id not in self.threads:
+            self.threads[thread_id] = {}
+
         thread = self.threads[thread_id]
         thread_status = self.jdwp.ThreadReference.Status({
             "thread": thread_id})
+
         thread["status"] = thread_status["threadStatus"]
         thread["is_suspended"] = thread_status["suspendStatus"]
         thread["frames"] = []

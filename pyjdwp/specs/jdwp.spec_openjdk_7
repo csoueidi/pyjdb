@@ -370,31 +370,31 @@ JDWP "Java(tm) Debug Wire Protocol"
         (Out
         )
         (Reply
-            (boolean canWatchFieldModification 
+            (boolean canWatchFieldModification
 	             "Can the VM watch field modification, and therefore "
 		     "can it send the Modification Watchpoint Event?")
-            (boolean canWatchFieldAccess 
+            (boolean canWatchFieldAccess
 	             "Can the VM watch field access, and therefore "
 		     "can it send the Access Watchpoint Event?")
-            (boolean canGetBytecodes 
+            (boolean canGetBytecodes
 	             "Can the VM get the bytecodes of a given method? ")
-            (boolean canGetSyntheticAttribute 
+            (boolean canGetSyntheticAttribute
 	             "Can the VM determine whether a field or method is "
 		     "synthetic? (that is, can the VM determine if the "
 		     "method or the field was invented by the compiler?) ")
-            (boolean canGetOwnedMonitorInfo 
+            (boolean canGetOwnedMonitorInfo
 	             "Can the VM get the owned monitors infornation for "
 		     "a thread?")
-            (boolean canGetCurrentContendedMonitor 
+            (boolean canGetCurrentContendedMonitor
 	             "Can the VM get the current contended monitor of a thread?")
-            (boolean canGetMonitorInfo 
+            (boolean canGetMonitorInfo
 	             "Can the VM get the monitor information for a given object? ")
-            (boolean canRedefineClasses 
+            (boolean canRedefineClasses
 	             "Can the VM redefine classes?")
-            (boolean canAddMethod 
+            (boolean canAddMethod
 	             "Can the VM add methods when redefining "
                      "classes?")
-            (boolean canUnrestrictedlyRedefineClasses 
+            (boolean canUnrestrictedlyRedefineClasses
 	             "Can the VM redefine classes"
                      "in arbitrary ways?")
             (boolean canPopFrames
@@ -448,7 +448,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         )
     )
     (Command RedefineClasses=18
-        "Installs new class definitions. "	
+        "Installs new class definitions. "
 	"If there are active stack frames in methods of the redefined classes in the "
 	"target VM then those active frames continue to run the bytecodes of the "
 	"original method. These methods are considered obsolete - see "
@@ -466,8 +466,8 @@ JDWP "Java(tm) Debug Wire Protocol"
 	"have the canAddMethod capability to add methods when redefining classes, "
 	"or the canUnrestrictedlyRedefineClasses to redefine classes in arbitrary "
 	"ways."
-	(Out 
-            (Repeat classes "Number of reference types that follow." 
+	(Out
+            (Repeat classes "Number of reference types that follow."
                 (Group ClassDef
                     (referenceType refType "The reference type.")
                     (Repeat classfile "Number of bytes defining class (below)"
@@ -477,7 +477,7 @@ JDWP "Java(tm) Debug Wire Protocol"
                 )
             )
         )
-        (Reply 
+        (Reply
         )
         (ErrorSet
             (Error INVALID_CLASS    "One of the refTypes is not the ID of a reference "
@@ -522,17 +522,17 @@ JDWP "Java(tm) Debug Wire Protocol"
         "section in "
         "<cite>The Java&trade; Virtual Machine Specification</cite>. "
         "Since JDWP version 1.5."
-	(Out 
+	(Out
         )
-        (Reply 
-            (Repeat classes "Number of reference types that follow." 
+        (Reply
+            (Repeat classes "Number of reference types that follow."
                 (Group ClassInfo
                     (byte refTypeTag  "<a href=\"#JDWP_TypeTag\">Kind</a> "
 		                      "of following reference type. ")
                     (referenceTypeID typeID "Loaded reference type")
-                    (string signature 
+                    (string signature
                                 "The JNI signature of the loaded reference type.")
-                    (string genericSignature 
+                    (string genericSignature
                                 "The generic signature of the loaded reference type "
                                 "or an empty string if there is none.")
                     (int status "The current class "
@@ -544,7 +544,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (Error VM_DEAD)
         )
     )
-    
+
     (Command InstanceCounts=21
         "Returns the number of instances of each reference type in the input list. "
         "Only instances that are reachable for the purposes of "
@@ -585,7 +585,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (referenceType refType "The reference type ID.")
         )
         (Reply
-            (string signature 
+            (string signature
                 "The JNI signature for the reference type.")
         )
         (ErrorSet
@@ -615,7 +615,7 @@ JDWP "Java(tm) Debug Wire Protocol"
     (Command Modifiers=3
         "Returns the modifiers (also known as access flags) for a reference type. "
 	"The returned bit mask contains information on the declaration "
-	"of the reference type. If the reference type is an array or " 
+	"of the reference type. If the reference type is an array or "
 	"a primitive class (for example, java.lang.Integer.TYPE), the "
 	"value of the returned bit mask is undefined."
         (Out
@@ -709,7 +709,7 @@ JDWP "Java(tm) Debug Wire Protocol"
 	"fields can be obtained."
         (Out
             (referenceType refType "The reference type ID.")
-            (Repeat fields "The number of values to get"	    	    
+            (Repeat fields "The number of values to get"
                 (Group Field
                     (field fieldID "A field to get")
                 )
@@ -717,7 +717,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         )
         (Reply
             (Repeat values "The number of values returned, always equal to fields, "
-	    		   "the number of values to get."	    
+	    		   "the number of values to get."
                 (value value "The field value")
             )
         )
@@ -739,11 +739,11 @@ JDWP "Java(tm) Debug Wire Protocol"
             (string sourceFile "The source file name. No path information "
 	                       "for the file is included")
         )
-        (ErrorSet	    
+        (ErrorSet
             (Error INVALID_CLASS     "refType is not the ID of a reference "
                                      "type.")
             (Error INVALID_OBJECT    "refType is not a known ID.")
-	    (Error ABSENT_INFORMATION	"The source file attribute is absent.")	    
+	    (Error ABSENT_INFORMATION	"The source file attribute is absent.")
             (Error VM_DEAD)
         )
     )
@@ -777,9 +777,9 @@ JDWP "Java(tm) Debug Wire Protocol"
 	"If the class is linked the PREPARED and VERIFIED bits in the returned status bits "
 	"will be set. If the class is initialized the INITIALIZED bit in the returned "
 	"status bits will be set. If an error occured during initialization then the "
-	"ERROR bit in the returned status bits will be set. "	
+	"ERROR bit in the returned status bits will be set. "
 	"The returned status bits are undefined for array types and for "
-	"primitive classes (such as java.lang.Integer.TYPE). "		
+	"primitive classes (such as java.lang.Integer.TYPE). "
         (Out
             (referenceType refType "The reference type ID.")
         )
@@ -859,9 +859,9 @@ JDWP "Java(tm) Debug Wire Protocol"
             (referenceType refType "The reference type ID.")
         )
         (Reply
-            (string signature 
+            (string signature
                 "The JNI signature for the reference type.")
-            (string genericSignature 
+            (string genericSignature
                 "The generic signature for the reference type or an empty "
                 "string if there is none.")
         )
@@ -956,7 +956,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         )
     )
     (Command Instances=16
-        "Returns instances of this reference type. " 
+        "Returns instances of this reference type. "
         "Only instances that are reachable for the purposes of "
         "garbage collection are returned. "
         "<p>Since JDWP version 1.6. Requires canGetInstanceInfo capability - see "
@@ -965,7 +965,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (referenceType refType "The reference type ID.")
             (int maxInstances "Maximum number of instances to return.  Must be non-negative. "
                               "If zero, all instances are returned.")
-        )       
+        )
         (Reply
             (Repeat instances "The number of instances that follow."
                  (tagged-object instance "An instance of this reference type.")
@@ -989,14 +989,14 @@ JDWP "Java(tm) Debug Wire Protocol"
         )
         (Reply
 	    (int majorVersion "Major version number")
-	    (int minorVersion "Minor version number")		
+	    (int minorVersion "Minor version number")
         )
         (ErrorSet
             (Error INVALID_CLASS     "refType is not the ID of a reference "
                                      "type.")
             (Error INVALID_OBJECT    "refType is not a known ID.")
 	    (Error ABSENT_INFORMATION "The class file version information is "
-				      "absent for primitive and array types.")	    
+				      "absent for primitive and array types.")
             (Error VM_DEAD)
         )
     )
@@ -1025,7 +1025,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (Error NOT_IMPLEMENTED   "If the target virtual machine does not "
                                      "support the retrieval of constant pool information.")
 	    (Error ABSENT_INFORMATION "The Constant Pool information is "
-			              "absent for primitive and array types.")	    
+			              "absent for primitive and array types.")
             (Error VM_DEAD)
         )
     )
@@ -1037,7 +1037,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (classType clazz "The class type ID.")
         )
         (Reply
-            (classType superclass 
+            (classType superclass
                 "The superclass (null if the class ID for java.lang.Object is specified).")
         )
         (ErrorSet
@@ -1074,7 +1074,7 @@ JDWP "Java(tm) Debug Wire Protocol"
                                      "object field is not a known ID.")
             (Error INVALID_FIELDID)
             (Error VM_DEAD)
-        ) 
+        )
     )
     (Command InvokeMethod=3
         "Invokes a static method. "
@@ -1135,7 +1135,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (classType clazz "The class type ID.")
             (threadObject thread "The thread in which to invoke.")
             (method methodID "The method to invoke.")
-            (Repeat arguments 
+            (Repeat arguments
                 (value arg "The argument value.")
             )
             (int options "Invocation <a href=\"#JDWP_InvokeOptions\">options</a>")
@@ -1210,7 +1210,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (classType clazz "The class type ID.")
             (threadObject thread "The thread in which to invoke the constructor.")
             (method methodID "The constructor to invoke.")
-            (Repeat arguments 
+            (Repeat arguments
                 (value arg "The argument value.")
             )
             (int options "Constructor invocation <a href=\"#JDWP_InvokeOptions\">options</a>")
@@ -1239,7 +1239,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (arrayType arrType "The array type of the new instance.")
             (int length "The length of the array.")
         )
-        (Reply  
+        (Reply
 	    (tagged-object newArray "The newly created array object. ")
         )
         (ErrorSet
@@ -1256,9 +1256,9 @@ JDWP "Java(tm) Debug Wire Protocol"
         "Returns line number information for the method, if present. "
 	"The line table maps source line numbers to the initial code index "
 	"of the line. The line table "
-	"is ordered by code index (from lowest to highest). The line number " 
+	"is ordered by code index (from lowest to highest). The line number "
 	"information is constant unless a new class definition is installed "
-	"using <a href=\"#JDWP_VirtualMachine_RedefineClasses\">RedefineClasses</a>."	
+	"using <a href=\"#JDWP_VirtualMachine_RedefineClasses\">RedefineClasses</a>."
         (Out
             (referenceType refType "The class.")
             (method methodID "The method.")
@@ -1303,7 +1303,7 @@ JDWP "Java(tm) Debug Wire Protocol"
 			"<code>codeIndex</code> <= current frame code index < <code>codeIndex + length</code> ")
                     (string name "The variable's name.")
                     (string signature "The variable type's JNI signature.")
-                    (int length 
+                    (int length
 		        "Unsigned value used in conjunction with <code>codeIndex</code>. "
 		        "The variable can be get or set only when the current "
 			"<code>codeIndex</code> <= current frame code index < <code>code index + length</code> ")
@@ -1358,7 +1358,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         (Reply
             (boolean isObsolete    "true if this method has been replaced"
                                    "by a non-equivalent method using"
-				   "the RedefineClasses command.") 
+				   "the RedefineClasses command.")
         )
         (ErrorSet
             (Error INVALID_CLASS     "refType is not the ID of a reference "
@@ -1398,7 +1398,7 @@ JDWP "Java(tm) Debug Wire Protocol"
                     (string signature "The variable type's JNI signature.")
                     (string genericSignature "The variable type's generic "
                          "signature or an empty string if there is none.")
-                    (int length 
+                    (int length
 		        "Unsigned value used in conjunction with <code>codeIndex</code>. "
 		        "The variable can be get or set only when the current "
 			"<code>codeIndex</code> <= current frame code index < <code>code index + length</code> ")
@@ -1416,7 +1416,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         )
     )
 
-) 
+)
 (CommandSet Field=8
 )
 (CommandSet ObjectReference=9
@@ -1489,7 +1489,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (Error INVALID_OBJECT)
             (Error INVALID_FIELDID)
             (Error VM_DEAD)
-        ) 
+        )
     )
     (Command MonitorInfo=5
         "Returns monitor information for an object. All threads int the VM must "
@@ -1612,7 +1612,7 @@ JDWP "Java(tm) Debug Wire Protocol"
 	"pattern of garbage collection in the target VM and, "
 	"consequently, may result in application behavior under the "
 	"debugger that differs from its non-debugged behavior. "
-	(Out 
+	(Out
 	    (object object "The object ID")
 	)
 	(Reply "none"
@@ -1629,7 +1629,7 @@ JDWP "Java(tm) Debug Wire Protocol"
 	"necessary only if garbage collection was previously disabled with "
 	"the <a href=\"#JDWP_ObjectReference_DisableCollection\">DisableCollection</a> "
 	"command."
-        (Out 
+        (Out
             (object object "The object ID")
         )
         (Reply "none"
@@ -1666,7 +1666,7 @@ JDWP "Java(tm) Debug Wire Protocol"
             (int maxReferrers "Maximum number of referring objects to return. "
                               "Must be non-negative. If zero, all referring "
                               "objects are returned.")
-        )       
+        )
         (Reply
             (Repeat referringObjects "The number of objects that follow."
                 (tagged-object instance "An object that references this object.")
@@ -1772,7 +1772,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         (Out
             (threadObject thread "The thread object ID. ")
         )
-        (Reply 
+        (Reply
             (int threadStatus "One of the thread status codes "
                     "See <a href=\"#JDWP_ThreadStatus\">JDWP.ThreadStatus</a>")
             (int suspendStatus "One of the suspend status codes "
@@ -1807,7 +1807,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         (Out
             (threadObject thread "The thread object ID. ")
             (int startFrame "The index of the first frame to retrieve.")
-            (int length 
+            (int length
                         "The count of frames to retrieve "
                         "(-1 means all remaining). ")
         )
@@ -1827,8 +1827,8 @@ JDWP "Java(tm) Debug Wire Protocol"
     )
     (Command FrameCount=7
         "Returns the count of frames on this thread's stack. "
-	"The thread must be suspended, and the returned "	   	
-	"count is valid only while the thread is suspended. "	
+	"The thread must be suspended, and the returned "
+	"count is valid only while the thread is suspended. "
         "Returns JDWP.Error.errorThreadNotSuspended if not suspended. "
         (Out
             (threadObject thread "The thread object ID. ")
@@ -1923,7 +1923,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         (Out
             (threadObject thread "The thread object ID. ")
         )
-        (Reply 
+        (Reply
             (int suspendCount "The number of outstanding suspends of this thread. ")
         )
         (ErrorSet
@@ -1995,7 +1995,7 @@ JDWP "Java(tm) Debug Wire Protocol"
         "language method. Forcing return on a thread with only one "
         "frame on the stack causes the thread to exit when resumed. "
 	"<p>"
-        "For void methods, the value must be a void value. " 
+        "For void methods, the value must be a void value. "
         "For methods that return primitive values, the value's type must "
         "match the return type exactly.  For object values, there must be a "
 	"widening reference conversion from the value's type to the "
@@ -2167,7 +2167,7 @@ JDWP "Java(tm) Debug Wire Protocol"
                 (Group ClassInfo
                     (byte refTypeTag  "<a href=\"#JDWP_TypeTag\">Kind</a> "
 		                      "of following reference type. ")
-                    (referenceTypeID typeID  
+                    (referenceTypeID typeID
                         "A class visible to this class loader.")
                 )
             )
@@ -2186,14 +2186,14 @@ JDWP "Java(tm) Debug Wire Protocol"
 	"target VM. If an event occurs that has not been requested then it is not sent "
 	"from the target VM. The two exceptions to this are the VM Start Event and "
 	"the VM Death Event which are automatically generated events - see "
-	"<a href=\"#JDWP_Event_Composite\">Composite Command</a> for further details."	
+	"<a href=\"#JDWP_Event_Composite\">Composite Command</a> for further details."
         (Out
             (byte eventKind "Event kind to request. "
                       "See <a href=\"#JDWP_EventKind\">JDWP.EventKind</a> "
 		      "for a complete list of events that can be requested; "
                       "some events may require a capability in order to be requested. "
 		      )
-            (byte suspendPolicy 
+            (byte suspendPolicy
                       "What threads are suspended when this event occurs? "
                       "Note that the order of events and command replies "
 		      "accurately reflects the order in which threads are "
@@ -2220,7 +2220,7 @@ JDWP "Java(tm) Debug Wire Protocol"
 			      "target VM to the debugger VM. "
                 (Select Modifier
                     (byte modKind "Modifier kind")
-                    (Alt Count=1 
+                    (Alt Count=1
 			"Limit the requested event to be reported at most once after a "
 			"given number of occurrences.  The event is not reported "
 			"the first <code>count - 1</code> times this filter is reached. "
@@ -2232,21 +2232,21 @@ JDWP "Java(tm) Debug Wire Protocol"
 			"reported. In either case subsequent events are never reported for "
 			"this request. "
 			"This modifier can be used with any event kind."
-			
+
 			(int count "Count before event. One for one-off.")
                     )
                     (Alt Conditional=2 "Conditional on expression"
                         (int exprID "For the future")
                     )
-                    (Alt ThreadOnly=3 
+                    (Alt ThreadOnly=3
 		        "Restricts reported events to "
 			"those in the given thread. "
 			"This modifier can be used with any event kind "
 			"except for class unload. "
-			
+
                         (threadObject thread "Required thread")
                     )
-                    (Alt ClassOnly=4 
+                    (Alt ClassOnly=4
 			"For class prepare events, restricts the events "
 			"generated by this request to be the "
 			"preparation of the given reference type and any subtypes. "
@@ -2260,10 +2260,10 @@ JDWP "Java(tm) Debug Wire Protocol"
 			"be safely cast to the given reference type. "
 			"This modifier can be used with any event kind except "
 			"class unload, thread start, and thread end. "
-     
+
                         (referenceType clazz "Required class")
                     )
-                    (Alt ClassMatch=5 
+                    (Alt ClassMatch=5
 			"Restricts reported events to those for classes whose name "
 			"matches the given restricted regular expression. "
 			"For class prepare events, the prepared class name "
@@ -2274,16 +2274,16 @@ JDWP "Java(tm) Debug Wire Protocol"
 			"the class name of the event's location is matched. "
 			"This modifier can be used with any event kind except "
 			"thread start and thread end. "
-			
+
                         (string classPattern "Required class pattern. "
 				"Matches are limited to exact matches of the "
 				"given class pattern and matches of patterns that "
 				"begin or end with '*'; for example, "
 				"\"*.Foo\" or \"java.*\". "
 			)
-			
+
                     )
-                    (Alt ClassExclude=6 
+                    (Alt ClassExclude=6
 			"Restricts reported events to those for classes whose name "
 			"does not match the given restricted regular expression. "
 			"For class prepare events, the prepared class name "
@@ -2294,7 +2294,7 @@ JDWP "Java(tm) Debug Wire Protocol"
 			"the class name of the event's location is matched. "
 			"This modifier can be used with any event kind except "
 			"thread start and thread end. "
-			
+
                         (string classPattern "Disallowed class pattern. "
 				"Matches are limited to exact matches of the "
 				"given class pattern and matches of patterns that "
@@ -2302,22 +2302,22 @@ JDWP "Java(tm) Debug Wire Protocol"
 				"\"*.Foo\" or \"java.*\". "
 			)
                     )
-                    (Alt LocationOnly=7 
+                    (Alt LocationOnly=7
 		        "Restricts reported events to those that occur at "
 			"the given location. "
 			"This modifier can be used with "
 			"breakpoint, field access, field modification, "
 			"step, and exception event kinds. "
-			
+
                         (location loc "Required location")
                     )
-                    (Alt ExceptionOnly=8 
+                    (Alt ExceptionOnly=8
 		        "Restricts reported exceptions by their class and "
 			"whether they are caught or uncaught. "
 			"This modifier can be used with "
 			"exception event kinds only. "
-			
-                        (referenceType exceptionOrNull 
+
+                        (referenceType exceptionOrNull
                                 "Exception to report. Null (0) means report "
 				"exceptions of all types. "
 				"A non-null type restricts the reported exception "
@@ -2333,24 +2333,24 @@ JDWP "Java(tm) Debug Wire Protocol"
 				"<a href=\"#JDWP_Event_Composite\">composite events</a> "
 				"for more information. "
 			)
-			
+
                     )
-                    (Alt FieldOnly=9 
+                    (Alt FieldOnly=9
 			"Restricts reported events to those that occur for "
 			"a given field. "
 			"This modifier can be used with "
 			"field access and field modification event kinds only. "
-			
+
                         (referenceType declaring "Type in which field is declared.")
                         (field fieldID "Required field")
                     )
-                    (Alt Step=10 
+                    (Alt Step=10
 		        "Restricts reported step events "
 			"to those which satisfy "
 			"depth and size constraints. "
 			"This modifier can be used with "
 			"step event kinds only. "
-			
+
                         (threadObject thread "Thread in which to step")
                         (int size "size of each step. "
                            "See <a href=\"#JDWP_StepSize\">JDWP.StepSize</a>")
@@ -2364,7 +2364,7 @@ JDWP "Java(tm) Debug Wire Protocol"
 			"This modifier can be used with any event kind "
 			"except class prepare, class unload, thread start, "
 			"and thread end. Introduced in JDWP version 1.4."
-     
+
                         (object instance "Required 'this' object")
                     )
                     (Alt SourceNameMatch=12
@@ -2389,7 +2389,7 @@ JDWP "Java(tm) Debug Wire Protocol"
                     )
 
                 )
-            ) 
+            )
         )
         (Reply
             (int requestID "ID of created request")
@@ -2410,7 +2410,7 @@ JDWP "Java(tm) Debug Wire Protocol"
     )
     (Command Clear=2
         "Clear an event request. See <a href=\"#JDWP_EventKind\">JDWP.EventKind</a> "
-        "for a complete list of events that can be cleared. Only the event request matching " 
+        "for a complete list of events that can be cleared. Only the event request matching "
 	"the specified event kind and requestID is cleared. If there isn't a matching event "
 	"request the command is a no-op and does not result in an error. Automatically "
 	"generated events do not have a corresponding event request and may not be cleared "
@@ -2450,16 +2450,16 @@ JDWP "Java(tm) Debug Wire Protocol"
             (threadObject thread "The frame's thread. ")
             (frame frame "The frame ID. ")
             (Repeat slots "The number of values to get. "
-                (Group SlotInfo 
+                (Group SlotInfo
                     (int slot "The local variable's index in the frame. ")
                     (byte sigbyte "A <a href=\"#JDWP_Tag\">tag</a> "
 		                  "identifying the type of the variable ")
                 )
-            )   
+            )
         )
         (Reply
             (Repeat values "The number of values retrieved, always equal to slots, "
-	    		   "the number of values to get."	    
+	    		   "the number of values to get."
                 (value slotValue "The value of the local variable. ")
             )
         )
@@ -3144,5 +3144,4 @@ JDWP "Java(tm) Debug Wire Protocol"
     (Constant INVOKE_NONVIRTUAL = 0x02
         "otherwise, normal virtual invoke (instance methods only)")
 )
-
 

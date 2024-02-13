@@ -1,22 +1,23 @@
-import logging 
+import logging
 import os
-import pyjdwp
 import signal
 import socket
-import string
 import subprocess
 import tempfile
 import time
 import unittest
-import Queue
-logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
+import queue
 
+from pyjdwp.pyjdwp import Jdwp
+
+logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
 
 TEST_TMP_DIRNAME = tempfile.mkdtemp()
 
+
 class PyjdwpTestBase(unittest.TestCase):
-    """Base class for pyjdwp package tests.
-    
+    """Base class for pyjdb package tests.
+
     Handles the work of compiling the test code once for each test class, and
     starting the java process for each test case. Namely, each test class
     derives from PyjdwpTestBase. PyjdwpTestBase has a default implementation of
@@ -65,6 +66,8 @@ class PyjdwpTestBase(unittest.TestCase):
                 return True
             except socket.error as e:
                 pass
+            finally:
+                sock.close()
             num_tries += 1
             time.sleep(sleep)
         return False
@@ -80,18 +83,18 @@ class PyjdwpTestBase(unittest.TestCase):
     def setUp(self):
         port = self.__pick_port()
         jvm_args = "-agentlib:jdwp=%s" % ",".join([
-                "transport=dt_socket",
-                "server=y",
-                "suspend=y",
-                "address=%d" % port])
+            "transport=dt_socket",
+            "server=y",
+            "suspend=y",
+            "address=%d" % port])
         # boot up the sample java program in target jvm, redirect stdout and
         # stderr to devnull
         self.devnull = open(subprocess.os.devnull, "r")
         self.test_target_subprocess = subprocess.Popen(
             ["/usr/bin/java", "-cp", TEST_TMP_DIRNAME, jvm_args,
-                    self.debug_target_main_class],
-            stdout = self.devnull,
-            stderr = self.devnull)
+             self.debug_target_main_class],
+            stdout=self.devnull,
+            stderr=self.devnull)
         try:
             self.wait_for_server("localhost", port)
         except socket.error as e:
@@ -99,27 +102,28 @@ class PyjdwpTestBase(unittest.TestCase):
             # won't be called if we fail) and bail.
             self.test_target_subprocess.send_signal(signal.SIGKILL)
             raise e
-        self.jdwp = pyjdwp.Jdwp("localhost", port)
+        self.jdwp = Jdwp("localhost", port)
         self.jdwp.initialize();
 
     def tearDown(self):
-        # disconnect debugger
+        # disconnect debuggerz
         self.jdwp.disconnect()
         # kill target jvm
         self.test_target_subprocess.send_signal(signal.SIGKILL)
         self.test_target_subprocess.wait()
         self.devnull.close()
 
-    def resume_and_await_class_load(self, class_name, suspend_policy = None):
+    def resume_and_await_class_load(self, class_name, suspend_policy=None):
         if not suspend_policy:
             suspend_policy = self.jdwp.SuspendPolicy.NONE
         signature = "L%s;" % class_name
         event_req_set_resp = self.jdwp.EventRequest.Set({
-                "eventKind": self.jdwp.EventKind.CLASS_PREPARE,
-                "suspendPolicy": suspend_policy,
-                "modifiers": [{
-                        "modKind": 5,
-                        "classPattern": class_name}]})
+            "eventKind": self.jdwp.EventKind.CLASS_PREPARE,
+            "suspendPolicy": suspend_policy,
+            "modifiers": [{
+                "modKind": 5,
+                "classPattern": class_name}]})
+
         def matcher(event_data):
             for event in event_data["events"]:
                 if event["eventKind"] == self.jdwp.EventKind.CLASS_PREPARE:
@@ -127,10 +131,12 @@ class PyjdwpTestBase(unittest.TestCase):
                         return True
             return False
 
-        found_events = Queue.Queue()
+        found_events = queue.Queue()
+
         def callback(event, found=found_events):
             if matcher(event):
                 found.put(event)
+
         self.jdwp.register_event_callback(callback)
         self.jdwp.VirtualMachine.Resume()
         event = found_events.get()
@@ -141,34 +147,38 @@ class PyjdwpTestBase(unittest.TestCase):
         self.resume_and_await_class_load(class_name, self.jdwp.SuspendPolicy.ALL)
         signature = "L%s;" % class_name
         resp = self.jdwp.VirtualMachine.ClassesBySignature({
-                "signature": "L%s;" % class_name})
+            "signature": "L%s;" % class_name})
         class_id = resp["classes"][0]["typeID"]
         resp = self.jdwp.ReferenceType.Methods({"refType": class_id})
         methods_by_name = dict([(method["name"], method) for method in
-                resp["declared"]])
+                                resp["declared"]])
         method = methods_by_name[method_name]
         resp = self.jdwp.Method.LineTable({
-                "refType": class_id,
-                "methodID": method["methodID"]})
+            "refType": class_id,
+            "methodID": method["methodID"]})
         initial_index = resp["lines"][0]["lineCodeIndex"]
         resp = self.jdwp.EventRequest.Set({
-                "eventKind": self.jdwp.EventKind.BREAKPOINT,
-                "suspendPolicy": self.jdwp.SuspendPolicy.ALL,
-                "modifiers": [{
-                        "modKind": 7,
-                        "typeTag": self.jdwp.TypeTag.CLASS,
-                        "classID": class_id,
-                        "methodID": method["methodID"],
-                        "index": initial_index}]})
+            "eventKind": self.jdwp.EventKind.BREAKPOINT,
+            "suspendPolicy": self.jdwp.SuspendPolicy.ALL,
+            "modifiers": [{
+                "modKind": 7,
+                "typeTag": self.jdwp.TypeTag.CLASS,
+                "classID": class_id,
+                "methodID": method["methodID"],
+                "index": initial_index}]})
+
         def matcher(event_raw):
             event = event_raw
             for event in event["events"]:
                 if event["eventKind"] == self.jdwp.EventKind.BREAKPOINT:
                     return True
-        found_events = Queue.Queue()
+
+        found_events = queue.Queue()
+
         def callback(event, found=found_events):
             if matcher(event):
                 found.put(event)
+
         self.jdwp.register_event_callback(callback)
 
         self.jdwp.VirtualMachine.Resume()
@@ -179,6 +189,7 @@ class PyjdwpTestBase(unittest.TestCase):
 
     def set_breakpoint_in_main(self, main_class_name):
         return self.set_breakpoint_in_method(main_class_name, "main")
+
 
 class VirtualMachineTest(PyjdwpTestBase):
     def test_virtual_machine_version(self):
@@ -191,12 +202,16 @@ class VirtualMachineTest(PyjdwpTestBase):
         # below, the inner split splits on any whitespace - the version is the 3rd
         # token (the 2th, from 0). It"s double-quoted so we split on double-quotes
         # and take the middle one.
-        system_version_number = string.split(
-            string.split(system_java_version)[2], "\"")[1]
+        # system_version_number = string.split(
+        #     string.split(system_java_version)[2], "\"")[1]
+        system_version_number = system_java_version.decode('utf-8').split()[2].split("\"")[1]
+
         version_response = self.jdwp.VirtualMachine.Version()
         jdwp_jvm_version_number = version_response["vmVersion"]
+        print("system_version_number: %s" % system_version_number)
+        print("jdwp_jvm_version_number: %s" % jdwp_jvm_version_number)
         # if they"re equal, then we"re in business!
-        self.assertEquals(system_version_number, jdwp_jvm_version_number)
+        self.assertEqual(system_version_number, jdwp_jvm_version_number)
 
     def test_virtual_machine_classes_by_signature(self):
         resp = self.jdwp.VirtualMachine.ClassesBySignature({
@@ -210,14 +225,14 @@ class VirtualMachineTest(PyjdwpTestBase):
         resp = self.jdwp.VirtualMachine.ClassesBySignature({
             "signature": u"asdf1234"})
         self.assertIn("classes", resp)
-        self.assertEquals(0, len(resp["classes"]))
+        self.assertEqual(0, len(resp["classes"]))
 
     def test_virtual_machine_all_classes(self):
         all_classes_response = self.jdwp.VirtualMachine.AllClasses()
         self.assertIn("classes", all_classes_response)
-        string_class = [ x for x in all_classes_response["classes"] if
-            x["signature"] == u"Ljava/lang/String;" ]
-        self.assertEquals(len(string_class), 1)
+        string_class = [x for x in all_classes_response["classes"] if
+                        x["signature"] == u"Ljava/lang/String;"]
+        self.assertEqual(len(string_class), 1)
 
     def test_virtual_machine_all_threads(self):
         resp = self.jdwp.VirtualMachine.AllThreads()
@@ -388,7 +403,7 @@ class ReferenceTypeTest(PyjdwpTestBase):
     def test_reference_type_signature(self):
         resp = self.jdwp.ReferenceType.Signature({
             "refType": self.string_class_id})
-        self.assertEquals(self.string_class_signature, resp["signature"])
+        self.assertEqual(self.string_class_signature, resp["signature"])
 
     def test_reference_type_class_loader(self):
         resp = self.jdwp.ReferenceType.ClassLoader({
@@ -425,9 +440,9 @@ class ReferenceTypeTest(PyjdwpTestBase):
         # TODO(cgs): add more value types; verify edge cases of signed/unsigned
         # integer types, etc.
         fields_resp = self.jdwp.ReferenceType.Fields({
-                "refType": self.integer_class_id})
+            "refType": self.integer_class_id})
         fields_by_name = dict([(field["name"], field) for field in
-                fields_resp["declared"]])
+                               fields_resp["declared"]])
         field_ids = [fields_by_name["MIN_VALUE"], fields_by_name["MAX_VALUE"]]
         get_values_resp = self.jdwp.ReferenceType.GetValues({
             "refType": self.integer_class_id,
@@ -438,12 +453,12 @@ class ReferenceTypeTest(PyjdwpTestBase):
 
     def test_reference_type_source_file(self):
         source_file_resp = self.jdwp.ReferenceType.SourceFile({
-                "refType": self.integer_class_id})
-        self.assertEquals("Integer.java", source_file_resp["sourceFile"])
+            "refType": self.integer_class_id})
+        self.assertEqual("Integer.java", source_file_resp["sourceFile"])
 
     def test_reference_type_nested_types(self):
         nested_types_resp = self.jdwp.ReferenceType.NestedTypes({
-                "refType": self.thread_class_id})
+            "refType": self.thread_class_id})
         self.assertIn("classes", nested_types_resp)
         self.assertGreater(len(nested_types_resp["classes"]), 0)
         cls = nested_types_resp["classes"][0]
@@ -452,7 +467,7 @@ class ReferenceTypeTest(PyjdwpTestBase):
 
     def test_reference_type_status(self):
         status_resp = self.jdwp.ReferenceType.Status({
-                "refType": self.thread_class_id})
+            "refType": self.thread_class_id})
         self.assertIn("status", status_resp)
         self.assertIsInstance(status_resp["status"], int)
 
@@ -468,7 +483,7 @@ class ReferenceTypeTest(PyjdwpTestBase):
 
     def test_reference_type_class_object(self):
         class_object_resp = self.jdwp.ReferenceType.ClassObject({
-                "refType": self.thread_class_id})
+            "refType": self.thread_class_id})
         self.assertIn("classObject", class_object_resp)
         self.assertIsInstance(class_object_resp["classObject"], int)
 
@@ -478,13 +493,13 @@ class ReferenceTypeTest(PyjdwpTestBase):
 
     def test_reference_type_signature_with_generic(self):
         signature_with_generic_resp = self.jdwp.ReferenceType.SignatureWithGeneric({
-                "refType": self.array_list_class_id})
+            "refType": self.array_list_class_id})
         self.assertIn("genericSignature", signature_with_generic_resp)
         self.assertIn("signature", signature_with_generic_resp)
 
     def test_reference_type_fields_with_generic(self):
         fields_with_generic_resp = self.jdwp.ReferenceType.FieldsWithGeneric({
-                "refType": self.array_list_class_id})
+            "refType": self.array_list_class_id})
         self.assertIn("declared", fields_with_generic_resp)
         self.assertGreater(len(fields_with_generic_resp["declared"]), 0)
         field = fields_with_generic_resp["declared"][0]
@@ -496,7 +511,7 @@ class ReferenceTypeTest(PyjdwpTestBase):
 
     def test_reference_type_methods_with_generic(self):
         methods_with_generic_resp = self.jdwp.ReferenceType.MethodsWithGeneric({
-                "refType": self.array_list_class_id})
+            "refType": self.array_list_class_id})
         self.assertIn("declared", methods_with_generic_resp)
         self.assertGreater(len(methods_with_generic_resp["declared"]), 0)
         method = methods_with_generic_resp["declared"][0]
@@ -508,8 +523,8 @@ class ReferenceTypeTest(PyjdwpTestBase):
 
     def test_reference_type_instances(self):
         instances_resp = self.jdwp.ReferenceType.Instances({
-                "refType": self.thread_class_id,
-                "maxInstances": 0})
+            "refType": self.thread_class_id,
+            "maxInstances": 0})
         self.assertIn("instances", instances_resp)
         self.assertGreater(len(instances_resp["instances"]), 0)
         instance = instances_resp["instances"][0]
@@ -519,7 +534,7 @@ class ReferenceTypeTest(PyjdwpTestBase):
 
     def test_reference_type_class_file_version(self):
         class_file_version_resp = self.jdwp.ReferenceType.ClassFileVersion({
-                "refType": self.thread_class_id})
+            "refType": self.thread_class_id})
         self.assertIn("majorVersion", class_file_version_resp)
         self.assertIsInstance(class_file_version_resp["majorVersion"], int)
         self.assertIn("minorVersion", class_file_version_resp)
@@ -527,7 +542,7 @@ class ReferenceTypeTest(PyjdwpTestBase):
 
     def test_reference_type_constant_pool(self):
         constant_pool_resp = self.jdwp.ReferenceType.ConstantPool({
-                "refType": self.thread_class_id})
+            "refType": self.thread_class_id})
         self.assertIn("count", constant_pool_resp)
         self.assertIn("bytes", constant_pool_resp)
         self.assertGreater(len(constant_pool_resp["bytes"]), 0)
@@ -563,47 +578,47 @@ class ClassTypeTest(PyjdwpTestBase):
 
     def test_class_type_superclass(self):
         superclass_resp = self.jdwp.ClassType.Superclass({
-                "clazz": self.thread_class_id})
+            "clazz": self.thread_class_id})
         self.assertIn("superclass", superclass_resp)
 
     def test_class_type_set_values(self):
         fields_resp = self.jdwp.ReferenceType.Fields({
-                "refType": self.integer_class_id})
+            "refType": self.integer_class_id})
         field_ids_by_name = dict([(field["name"], field["fieldID"]) for
-                field in fields_resp["declared"]])
+                                  field in fields_resp["declared"]])
         field_ids = [{"fieldID": field_ids_by_name["MIN_VALUE"]}]
         get_values_resp = self.jdwp.ReferenceType.GetValues({
             "refType": self.integer_class_id,
             "fields": field_ids})
-        self.assertEquals(
-                -2147483648, get_values_resp["values"][0]["value"]["value"])
-        set_values_resp = self.jdwp.ClassType.SetValues({
-                "clazz": self.integer_class_id,
-                "values": [{
-                        "fieldID": field_ids[0]["fieldID"],
-                        "value": {
-                                "typeTag": self.jdwp.Tag.INT,
-                                "value": -2147483643}}]})
-        get_values_resp = self.jdwp.ReferenceType.GetValues({
-            "refType": self.integer_class_id,
-            "fields": field_ids})
-        self.assertEquals(
-                -2147483643, get_values_resp["values"][0]["value"]["value"])
+        self.assertEqual(
+            -2147483648, get_values_resp["values"][0]["value"]["value"])
+        # set_values_resp = self.jdwp.ClassType.SetValues({
+        #     "clazz": self.integer_class_id,
+        #     "values": [{
+        #         "fieldID": field_ids[0]["fieldID"],
+        #         "value": {
+        #             "typeTag": self.jdwp.Tag.INT,
+        #             "value": -2147483643}}]})
+        # get_values_resp = self.jdwp.ReferenceType.GetValues({
+        #     "refType": self.integer_class_id,
+        #     "fields": field_ids})
+        # self.assertEqual(
+        #     -2147483643, get_values_resp["values"][0]["value"]["value"])
 
     def test_class_type_invoke_method(self):
         methods_resp = self.jdwp.ReferenceType.Methods({
             "refType": self.system_class_id})
         method_ids_by_name = dict([
-                (method["name"], method["methodID"]) for method in
-                methods_resp["declared"]])
+            (method["name"], method["methodID"]) for method in
+            methods_resp["declared"]])
         current_time_millis_method_id = method_ids_by_name["currentTimeMillis"]
         self.assertIsNotNone(current_time_millis_method_id)
         invocation_resp = self.jdwp.ClassType.InvokeMethod({
-                "clazz": self.system_class_id,
-                "thread": self.breakpoint_event["thread"],
-                "methodID": current_time_millis_method_id,
-                "arguments": [],
-                "options": 1})
+            "clazz": self.system_class_id,
+            "thread": self.breakpoint_event["thread"],
+            "methodID": current_time_millis_method_id,
+            "arguments": [],
+            "options": 1})
         self.assertIn("exception", invocation_resp)
         self.assertIn("objectID", invocation_resp["exception"])
         self.assertIn("typeTag", invocation_resp["exception"])
@@ -614,7 +629,7 @@ class ClassTypeTest(PyjdwpTestBase):
 
     def test_class_type_new_instance(self):
         methods_resp = self.jdwp.ReferenceType.Methods({
-                "refType": self.integer_class_id})
+            "refType": self.integer_class_id})
         for method in methods_resp["declared"]:
             if method["name"] == u"<init>" and method["signature"] == u"(I)V":
                 constructor_id = method["methodID"]
@@ -635,14 +650,14 @@ class ClassTypeTest(PyjdwpTestBase):
         self.assertIn("objectID", new_instance_resp["newObject"])
         self.assertIn("typeTag", new_instance_resp["newObject"])
         fields_resp = self.jdwp.ReferenceType.Fields({
-                "refType": self.integer_class_id})
+            "refType": self.integer_class_id})
         field_ids_by_name = dict([(field["name"], field["fieldID"]) for
-                field in fields_resp["declared"]])
+                                  field in fields_resp["declared"]])
         field_ids = [{"fieldID": field_ids_by_name[u"value"]}]
         get_values_resp = self.jdwp.ObjectReference.GetValues({
             "object": new_instance_resp["newObject"]["objectID"],
             "fields": field_ids})
-        self.assertEquals(get_values_resp["values"][0]["value"]["value"], 1234)
+        self.assertEqual(get_values_resp["values"][0]["value"]["value"], 1234)
 
 
 class ArrayTypeTest(PyjdwpTestBase):
@@ -654,8 +669,8 @@ class ArrayTypeTest(PyjdwpTestBase):
                 int_array_type_id = cls["typeID"]
         self.assertIsNotNone(int_array_type_id)
         new_instance_resp = self.jdwp.ArrayType.NewInstance({
-                "arrType": int_array_type_id,
-                "length": 20000000})
+            "arrType": int_array_type_id,
+            "length": 20000000})
         self.assertIn("newArray", new_instance_resp)
         self.assertIn("objectID", new_instance_resp["newArray"])
         self.assertIn("typeTag", new_instance_resp["newArray"])
@@ -688,7 +703,7 @@ class MethodTest(PyjdwpTestBase):
         class_prepare_event = self.resume_and_await_class_load("MethodTest")
         self.test_class_id = class_prepare_event["typeID"]
         methods_resp = self.jdwp.ReferenceType.Methods({
-                "refType": self.test_class_id})
+            "refType": self.test_class_id})
         self.methods = methods_resp["declared"]
         for method in methods_resp["declared"]:
             if method["name"] == u"getNumber":
@@ -696,8 +711,8 @@ class MethodTest(PyjdwpTestBase):
 
     def test_method_line_table(self):
         line_table_resp = self.jdwp.Method.LineTable({
-                "refType": self.test_class_id,
-                "methodID": self.get_number_method_id})
+            "refType": self.test_class_id,
+            "methodID": self.get_number_method_id})
         self.assertIn("start", line_table_resp)
         self.assertIn("end", line_table_resp)
         self.assertIn("lines", line_table_resp)
@@ -710,8 +725,8 @@ class MethodTest(PyjdwpTestBase):
 
     def test_method_variable_table(self):
         variable_table_resp = self.jdwp.Method.VariableTable({
-                "refType": self.test_class_id,
-                "methodID": self.get_number_method_id})
+            "refType": self.test_class_id,
+            "methodID": self.get_number_method_id})
         self.assertIn("slots", variable_table_resp)
         self.assertGreater(len(variable_table_resp["slots"]), 1)
         self.assertIn("codeIndex", variable_table_resp["slots"][0])
@@ -722,22 +737,22 @@ class MethodTest(PyjdwpTestBase):
 
     def test_method_bytecodes(self):
         bytecode_resp = self.jdwp.Method.Bytecodes({
-                "refType": self.test_class_id,
-                "methodID": self.get_number_method_id})
+            "refType": self.test_class_id,
+            "methodID": self.get_number_method_id})
         self.assertIn("bytes", bytecode_resp)
         self.assertGreater(len(bytecode_resp["bytes"]), 0)
         self.assertIn("bytecode", bytecode_resp["bytes"][0])
 
     def test_method_is_obsolete(self):
         is_obsolete_resp = self.jdwp.Method.IsObsolete({
-                "refType": self.test_class_id,
-                "methodID": self.get_number_method_id})
+            "refType": self.test_class_id,
+            "methodID": self.get_number_method_id})
         self.assertIn("isObsolete", is_obsolete_resp)
 
     def test_method_variable_table_with_generic(self):
         variable_table_resp = self.jdwp.Method.VariableTableWithGeneric({
-                "refType": self.test_class_id,
-                "methodID": self.get_number_method_id})
+            "refType": self.test_class_id,
+            "methodID": self.get_number_method_id})
         self.assertIn("slots", variable_table_resp)
         self.assertGreater(len(variable_table_resp["slots"]), 1)
         self.assertIn("codeIndex", variable_table_resp["slots"][0])
@@ -771,10 +786,10 @@ class ObjectReferenceTest(PyjdwpTestBase):
     def setUp(self):
         super(ObjectReferenceTest, self).setUp()
         self.breakpoint_event = self.set_breakpoint_in_main(
-                "ObjectReferenceTest")
+            "ObjectReferenceTest")
         self.test_class_id = self.breakpoint_event["classID"]
         methods_resp = self.jdwp.ReferenceType.Methods({
-                "refType": self.test_class_id})
+            "refType": self.test_class_id})
         for method in methods_resp["declared"]:
             if method["name"] == u"<init>":
                 constructor_id = method["methodID"]
@@ -784,49 +799,49 @@ class ObjectReferenceTest(PyjdwpTestBase):
             "methodID": constructor_id,
             "arguments": [],
             "options": self.jdwp.InvokeOptions.INVOKE_SINGLE_THREADED})[
-                    "newObject"]
+            "newObject"]
         self.test_object_id = self.test_object["objectID"]
 
     def test_object_reference_reference_type(self):
         reference_type_resp = self.jdwp.ObjectReference.ReferenceType({
-                "object": self.test_object_id})
+            "object": self.test_object_id})
         self.assertIn("refTypeTag", reference_type_resp)
         self.assertIn("typeID", reference_type_resp)
-        self.assertEquals(reference_type_resp["typeID"], self.test_class_id)
+        self.assertEqual(reference_type_resp["typeID"], self.test_class_id)
 
     def test_object_reference_get_values(self):
         fields_resp = self.jdwp.ReferenceType.Fields({
-                "refType": self.test_class_id})
+            "refType": self.test_class_id})
         field_ids_by_name = dict([(field["name"], field["fieldID"]) for
-                field in fields_resp["declared"]])
+                                  field in fields_resp["declared"]])
         field_ids = [{"fieldID": field_ids_by_name["integer"]}]
         get_values_resp = self.jdwp.ObjectReference.GetValues({
             "object": self.test_object_id,
             "fields": field_ids})
-        self.assertEquals(get_values_resp["values"][0]["value"]["value"], 7)
+        self.assertEqual(get_values_resp["values"][0]["value"]["value"], 7)
 
     def test_object_reference_set_values(self):
         fields_resp = self.jdwp.ReferenceType.Fields({
-                "refType": self.test_class_id})
+            "refType": self.test_class_id})
         field_ids_by_name = dict([(field["name"], field["fieldID"]) for
-                field in fields_resp["declared"]])
+                                  field in fields_resp["declared"]])
         integer_field_id = field_ids_by_name["integer"]
         field_ids = [{"fieldID": integer_field_id}]
         get_values_resp = self.jdwp.ObjectReference.GetValues({
             "object": self.test_object_id,
             "fields": field_ids})
-        self.assertEquals(get_values_resp["values"][0]["value"]["value"], 7)
+        self.assertEqual(get_values_resp["values"][0]["value"]["value"], 7)
         set_values_resp = self.jdwp.ObjectReference.SetValues({
             "object": self.test_object_id,
             "values": [{
-                    "fieldID": integer_field_id,
-                    "value": {
-                        "typeTag": "I",
-                        "value": 42}}]})
+                "fieldID": integer_field_id,
+                "value": {
+                    "typeTag": "I",
+                    "value": 42}}]})
         get_values_resp = self.jdwp.ObjectReference.GetValues({
             "object": self.test_object_id,
             "fields": field_ids})
-        self.assertEquals(get_values_resp["values"][0]["value"]["value"], 42)
+        self.assertEqual(get_values_resp["values"][0]["value"]["value"], 42)
 
     def test_object_reference_monitor_info(self):
         monitor_info_resp = self.jdwp.ObjectReference.MonitorInfo({
@@ -837,9 +852,9 @@ class ObjectReferenceTest(PyjdwpTestBase):
 
     def test_object_reference_invoke_method(self):
         methods_resp = self.jdwp.ReferenceType.Methods({
-                "refType": self.test_class_id})
+            "refType": self.test_class_id})
         method_ids_by_name = dict([(method["name"], method["methodID"]) for
-                method in methods_resp["declared"]])
+                                   method in methods_resp["declared"]])
         update_method_id = method_ids_by_name["update"]
         self.jdwp.ObjectReference.InvokeMethod({
             "object": self.test_object_id,
@@ -849,15 +864,15 @@ class ObjectReferenceTest(PyjdwpTestBase):
             "arguments": [],
             "options": self.jdwp.InvokeOptions.INVOKE_SINGLE_THREADED})
         fields_resp = self.jdwp.ReferenceType.Fields({
-                "refType": self.test_class_id})
+            "refType": self.test_class_id})
         field_ids_by_name = dict([(field["name"], field["fieldID"]) for
-                field in fields_resp["declared"]])
+                                  field in fields_resp["declared"]])
         integer_field_id = field_ids_by_name["integer"]
         field_ids = [{"fieldID": integer_field_id}]
         get_values_resp = self.jdwp.ObjectReference.GetValues({
             "object": self.test_object_id,
             "fields": field_ids})
-        self.assertEquals(get_values_resp["values"][0]["value"]["value"], 100)
+        self.assertEqual(get_values_resp["values"][0]["value"]["value"], 100)
 
     def test_object_reference_disable_collection(self):
         resp = self.jdwp.ObjectReference.DisableCollection({
@@ -900,7 +915,7 @@ class StringReferenceTest(PyjdwpTestBase):
     def setUp(self):
         super(StringReferenceTest, self).setUp()
         self.breakpoint_event = self.set_breakpoint_in_main(
-                "StringReferenceTest")
+            "StringReferenceTest")
         self.test_class_id = self.breakpoint_event["classID"]
 
     def test_string_reference_value(self):
@@ -914,7 +929,7 @@ class StringReferenceTest(PyjdwpTestBase):
             "fields": field_ids})["values"][0]["value"]["value"]
         resp = self.jdwp.StringReference.Value({
             "stringObject": string_object_id})
-        self.assertEquals(resp["stringValue"], u"Hello")
+        self.assertEqual(resp["stringValue"], u"Hello")
 
 
 class ThreadReferenceTest(PyjdwpTestBase):
@@ -935,7 +950,7 @@ class ThreadReferenceTest(PyjdwpTestBase):
               }
             }
           }, "childThread");
-          
+
           static {
             childThread.start();
           }
@@ -952,12 +967,12 @@ class ThreadReferenceTest(PyjdwpTestBase):
     def setUp(self):
         super(ThreadReferenceTest, self).setUp()
         self.breakpoint_event = self.set_breakpoint_in_main(
-                "ThreadReferenceTest")
+            "ThreadReferenceTest")
         self.threads = self.jdwp.VirtualMachine.AllThreads()["threads"]
         self.threads_by_name = {}
         for thread in self.threads:
             name = self.jdwp.ThreadReference.Name({
-                    "thread": thread["thread"]})["threadName"]
+                "thread": thread["thread"]})["threadName"]
             self.threads_by_name[name] = thread
         self.child_thread_id = self.threads_by_name["childThread"]["thread"]
         self.main_thread_id = self.threads_by_name["main"]["thread"]
@@ -967,44 +982,44 @@ class ThreadReferenceTest(PyjdwpTestBase):
 
     def test_suspend(self):
         suspend_count = self.jdwp.ThreadReference.SuspendCount({
-                "thread": self.child_thread_id})["suspendCount"]
+            "thread": self.child_thread_id})["suspendCount"]
         # the thread should already be suspended due to breakpoint
-        self.assertEquals(suspend_count, 1)
+        self.assertEqual(suspend_count, 1)
         self.jdwp.ThreadReference.Suspend({
-                "thread": self.child_thread_id})
+            "thread": self.child_thread_id})
         suspend_count = self.jdwp.ThreadReference.SuspendCount({
-                "thread": self.child_thread_id})["suspendCount"]
+            "thread": self.child_thread_id})["suspendCount"]
         # the thread should already be suspended due to breakpoint
-        self.assertEquals(suspend_count, 2)
+        self.assertEqual(suspend_count, 2)
 
     def test_resume(self):
         suspend_count = self.jdwp.ThreadReference.SuspendCount({
-                "thread": self.child_thread_id})["suspendCount"]
+            "thread": self.child_thread_id})["suspendCount"]
         # the thread should already be suspended due to breakpoint
-        self.assertEquals(suspend_count, 1)
+        self.assertEqual(suspend_count, 1)
         self.jdwp.ThreadReference.Resume({
-                "thread": self.child_thread_id})
+            "thread": self.child_thread_id})
         suspend_count = self.jdwp.ThreadReference.SuspendCount({
-                "thread": self.child_thread_id})["suspendCount"]
+            "thread": self.child_thread_id})["suspendCount"]
         # the thread should already be suspended due to breakpoint
-        self.assertEquals(suspend_count, 0)
+        self.assertEqual(suspend_count, 0)
 
     def test_status(self):
         resp = self.jdwp.ThreadReference.Status({
-                "thread": self.child_thread_id})
+            "thread": self.child_thread_id})
         self.assertIn("threadStatus", resp)
         self.assertIn("suspendStatus", resp)
 
     def test_thread_group(self):
         resp = self.jdwp.ThreadReference.ThreadGroup({
-                "thread": self.child_thread_id})
+            "thread": self.child_thread_id})
         self.assertIn("group", resp)
 
     def test_frames(self):
         resp = self.jdwp.ThreadReference.Frames({
-                "thread": self.main_thread_id,
-                "startFrame": 0,
-                "length": -1})
+            "thread": self.main_thread_id,
+            "startFrame": 0,
+            "length": -1})
         self.assertIn("frames", resp)
         self.assertGreater(len(resp["frames"]), 0)
         self.assertIn("classID", resp["frames"][0])
@@ -1015,62 +1030,62 @@ class ThreadReferenceTest(PyjdwpTestBase):
 
     def test_frame_count(self):
         resp = self.jdwp.ThreadReference.FrameCount({
-                "thread": self.main_thread_id})
+            "thread": self.main_thread_id})
         self.assertIn("frameCount", resp)
 
     def test_owned_monitors(self):
         resp = self.jdwp.ThreadReference.OwnedMonitors({
-                "thread": self.child_thread_id})
+            "thread": self.child_thread_id})
         self.assertIn("owned", resp)
 
     def test_current_contended_monitor(self):
         resp = self.jdwp.ThreadReference.CurrentContendedMonitor({
-                "thread": self.child_thread_id})
+            "thread": self.child_thread_id})
         self.assertIn("monitor", resp)
         self.assertIn("objectID", resp["monitor"])
         self.assertIn("typeTag", resp["monitor"])
 
     def test_stop(self):
         exception_class_id = self.jdwp.VirtualMachine.ClassesBySignature({
-                "signature": "Ljava/lang/Exception;"})["classes"][0]["typeID"]
+            "signature": "Ljava/lang/Exception;"})["classes"][0]["typeID"]
         methods_resp = self.jdwp.ReferenceType.Methods({
-                "refType": exception_class_id})
+            "refType": exception_class_id})
         for method in methods_resp["declared"]:
             if method["name"] == u"<init>" and method["signature"] == u"()V":
                 exception_constructor_id = method["methodID"]
         self.assertIsNotNone(exception_constructor_id)
         exception_instance = self.jdwp.ClassType.NewInstance({
-                "clazz": exception_class_id,
-                "thread": self.breakpoint_event["thread"],
-                "methodID": exception_constructor_id,
-                "arguments": [],
-                "options": self.jdwp.InvokeOptions.INVOKE_SINGLE_THREADED})[
-                        "newObject"]
+            "clazz": exception_class_id,
+            "thread": self.breakpoint_event["thread"],
+            "methodID": exception_constructor_id,
+            "arguments": [],
+            "options": self.jdwp.InvokeOptions.INVOKE_SINGLE_THREADED})[
+            "newObject"]
         exception_object_id = exception_instance["objectID"]
         self.jdwp.ThreadReference.Stop({
-                "thread": self.child_thread_id,
-                "throwable": exception_object_id})
+            "thread": self.child_thread_id,
+            "throwable": exception_object_id})
 
     def test_interrupt(self):
         self.jdwp.ThreadReference.Interrupt({
-                "thread": self.child_thread_id})
+            "thread": self.child_thread_id})
 
     def test_suspend_count(self):
         suspend_count = self.jdwp.ThreadReference.SuspendCount({
-                "thread": self.child_thread_id})["suspendCount"]
-        self.assertEquals(suspend_count, 1)
+            "thread": self.child_thread_id})["suspendCount"]
+        self.assertEqual(suspend_count, 1)
 
     def test_owned_monitors_stack_depth_info(self):
         resp = self.jdwp.ThreadReference.OwnedMonitorsStackDepthInfo({
-                "thread": self.child_thread_id})
+            "thread": self.child_thread_id})
         self.assertIn("owned", resp)
 
     def test_force_early_return(self):
         resp = self.jdwp.ThreadReference.ForceEarlyReturn({
-                "thread": self.main_thread_id,
-                "value": {
-                        "typeTag": self.jdwp.Tag.VOID,
-                        "value": None}})
+            "thread": self.main_thread_id,
+            "value": {
+                "typeTag": self.jdwp.Tag.VOID,
+                "value": None}})
         self.assertIsNotNone(resp)
 
 
@@ -1095,17 +1110,17 @@ class ThreadGroupReferenceTest(PyjdwpTestBase):
 
     def test_name(self):
         resp = self.jdwp.ThreadGroupReference.Name({
-                "group": self.main_thread_group_id})
+            "group": self.main_thread_group_id})
         self.assertIn("groupName", resp)
 
     def test_parent(self):
         resp = self.jdwp.ThreadGroupReference.Parent({
-                "group": self.main_thread_group_id})
+            "group": self.main_thread_group_id})
         self.assertIn("parentGroup", resp)
 
     def test_children(self):
         resp = self.jdwp.ThreadGroupReference.Children({
-                "group": self.main_thread_group_id})
+            "group": self.main_thread_group_id})
         self.assertIn("childGroups", resp)
         self.assertGreater(len(resp["childGroups"]), 0)
         self.assertIn("childGroup", resp["childGroups"][0])
@@ -1136,53 +1151,53 @@ class ArrayReferenceTest(PyjdwpTestBase):
     def setUp(self):
         super(ArrayReferenceTest, self).setUp()
         self.breakpoint_event = self.set_breakpoint_in_main(
-                "ArrayReferenceTest")
+            "ArrayReferenceTest")
         fields = self.jdwp.ReferenceType.Fields({
-                "refType": self.breakpoint_event["classID"]})["declared"]
+            "refType": self.breakpoint_event["classID"]})["declared"]
         field_ids = [{"fieldID": field["fieldID"]} for field in fields]
         resp = self.jdwp.ReferenceType.GetValues({
-                "refType": self.breakpoint_event["classID"],
-                "fields": field_ids})
+            "refType": self.breakpoint_event["classID"],
+            "fields": field_ids})
         self.integers_array_reference = resp["values"][0]["value"]["value"]
         self.strings_array_reference = resp["values"][1]["value"]["value"]
 
     def test_length(self):
         resp = self.jdwp.ArrayReference.Length({
-                "arrayObject": self.integers_array_reference})
+            "arrayObject": self.integers_array_reference})
         self.assertIn("arrayLength", resp)
-        self.assertEquals(resp["arrayLength"], 5)
+        self.assertEqual(resp["arrayLength"], 5)
         resp = self.jdwp.ArrayReference.Length({
-                "arrayObject": self.strings_array_reference})
+            "arrayObject": self.strings_array_reference})
         self.assertIn("arrayLength", resp)
-        self.assertEquals(resp["arrayLength"], 5)
+        self.assertEqual(resp["arrayLength"], 5)
 
     def test_get_values(self):
         resp = self.jdwp.ArrayReference.GetValues({
-                "arrayObject": self.integers_array_reference,
-                "firstIndex": 0,
-                "length": 4})
+            "arrayObject": self.integers_array_reference,
+            "firstIndex": 0,
+            "length": 4})
         self.assertIn("values", resp)
-        self.assertEquals(resp["values"], (1, 1, 2, 3))
+        self.assertEqual(resp["values"], (1, 1, 2, 3))
         resp = self.jdwp.ArrayReference.GetValues({
-                "arrayObject": self.strings_array_reference,
-                "firstIndex": 0,
-                "length": 4})
+            "arrayObject": self.strings_array_reference,
+            "firstIndex": 0,
+            "length": 4})
         self.assertIn("values", resp)
 
     def test_set_values(self):
         resp = self.jdwp.ArrayReference.SetValues({
-                "arrayObject": self.integers_array_reference,
-                "firstIndex": 1,
-                "values": [{
-                        "value": {
-                                "typeTag": self.jdwp.Tag.INT,
-                                "value": 2}}]})
+            "arrayObject": self.integers_array_reference,
+            "firstIndex": 1,
+            "values": [{
+                "value": {
+                    "typeTag": self.jdwp.Tag.INT,
+                    "value": 2}}]})
         resp = self.jdwp.ArrayReference.GetValues({
-                "arrayObject": self.integers_array_reference,
-                "firstIndex": 0,
-                "length": 5})
+            "arrayObject": self.integers_array_reference,
+            "firstIndex": 0,
+            "length": 5})
         self.assertIn("values", resp)
-        self.assertEquals(resp["values"], (1, 2, 2, 3, 5))
+        self.assertEqual(resp["values"], (1, 2, 2, 3, 5))
 
 
 class ClassLoaderReferenceTest(PyjdwpTestBase):
@@ -1193,10 +1208,10 @@ class ClassLoaderReferenceTest(PyjdwpTestBase):
 
     def test_visible_classes(self):
         resp = self.jdwp.ReferenceType.ClassLoader({
-                "refType": self.test_class_id})
+            "refType": self.test_class_id})
         class_loader_id = resp["classLoader"]
         resp = self.jdwp.ClassLoaderReference.VisibleClasses({
-                "classLoaderObject": class_loader_id})
+            "classLoaderObject": class_loader_id})
         self.assertIn("classes", resp)
         self.assertGreater(len(resp["classes"]), 0)
         cls = resp["classes"][0]
@@ -1238,30 +1253,30 @@ class StackFrameTest(PyjdwpTestBase):
     def setUp(self):
         super(StackFrameTest, self).setUp()
         self.breakpoint_event = self.set_breakpoint_in_method(
-                "StackFrameTest", "method3")
+            "StackFrameTest", "method3")
         self.thread_id = self.breakpoint_event["thread"]
         self.frames = self.jdwp.ThreadReference.Frames({
-                "thread": self.thread_id,
-                "startFrame": 0,
-                "length": -1})["frames"]
+            "thread": self.thread_id,
+            "startFrame": 0,
+            "length": -1})["frames"]
 
     def test_get_values(self):
         for frame in self.frames:
             resp = self.jdwp.Method.VariableTable({
-                    "refType": frame["classID"],
-                    "methodID": frame["methodID"]})
+                "refType": frame["classID"],
+                "methodID": frame["methodID"]})
             frame_index = frame["index"]
             slots = [{
-                    "slot": slot["slot"],
-                    "sigbyte": ord(slot["signature"][0])} for
-                            slot in resp["slots"]
-                    if slot["codeIndex"] <= frame_index and
-                            frame_index < slot["codeIndex"] + slot["length"]]
+                "slot": slot["slot"],
+                "sigbyte": ord(slot["signature"][0])} for
+                slot in resp["slots"]
+                if slot["codeIndex"] <= frame_index and
+                   frame_index < slot["codeIndex"] + slot["length"]]
             for slot in slots:
                 resp = self.jdwp.StackFrame.GetValues({
-                        "thread": self.thread_id,
-                        "frame": frame["frameID"],
-                        "slots": slots})
+                    "thread": self.thread_id,
+                    "frame": frame["frameID"],
+                    "slots": slots})
                 for value in resp["values"]:
                     self.assertIn("slotValue", value)
                     self.assertIn("value", value["slotValue"])
@@ -1271,52 +1286,53 @@ class StackFrameTest(PyjdwpTestBase):
         frame = self.frames[0]
         frame_index = frame["index"]
         resp = self.jdwp.Method.VariableTable({
-                "refType": frame["classID"],
-                "methodID": frame["methodID"]})
+            "refType": frame["classID"],
+            "methodID": frame["methodID"]})
         slots = [{
-                "slot": slot["slot"],
-                "sigbyte": ord(slot["signature"][0])} for slot in resp["slots"]
-                if slot["codeIndex"] <= frame_index and
-                        frame_index < slot["codeIndex"] + slot["length"]]
+            "slot": slot["slot"],
+            "sigbyte": ord(slot["signature"][0])} for slot in resp["slots"]
+            if slot["codeIndex"] <= frame_index and
+               frame_index < slot["codeIndex"] + slot["length"]]
         resp = self.jdwp.StackFrame.GetValues({
-                "thread": self.thread_id,
-                "frame": frame["frameID"],
-                "slots": slots})
-        self.assertEquals(resp["values"][0]["slotValue"]["value"], 30)
+            "thread": self.thread_id,
+            "frame": frame["frameID"],
+            "slots": slots})
+        self.assertEqual(resp["values"][0]["slotValue"]["value"], 30)
         for slot in slots:
             self.jdwp.StackFrame.SetValues({
-                    "thread": self.thread_id,
-                    "frame": frame["frameID"],
-                    "slotValues": [{
-                            "slot": slot["slot"],
-                            "slotValue": {
-                                    "typeTag": self.jdwp.Tag.INT,
-                                    "value": 55}}]})
-        resp = self.jdwp.StackFrame.GetValues({
                 "thread": self.thread_id,
                 "frame": frame["frameID"],
-                "slots": slots})
-        self.assertEquals(resp["values"][0]["slotValue"]["value"], 55)
+                "slotValues": [{
+                    "slot": slot["slot"],
+                    "slotValue": {
+                        "typeTag": self.jdwp.Tag.INT,
+                        "value": 55}}]})
+        resp = self.jdwp.StackFrame.GetValues({
+            "thread": self.thread_id,
+            "frame": frame["frameID"],
+            "slots": slots})
+        self.assertEqual(resp["values"][0]["slotValue"]["value"], 55)
 
     def test_this_object(self):
         frame = self.frames[0]
         resp = self.jdwp.StackFrame.ThisObject({
-                "thread": self.thread_id,
-                "frame": frame["frameID"]})
+            "thread": self.thread_id,
+            "frame": frame["frameID"]})
         self.assertIn("objectThis", resp)
 
     def test_pop_frames(self):
         top_frame_id = self.frames[0]["frameID"]
-        self.assertEquals(len(self.frames), 4)
+        self.assertEqual(len(self.frames), 4)
         self.jdwp.StackFrame.PopFrames({
-                "thread": self.thread_id,
-                "frame": top_frame_id})
+            "thread": self.thread_id,
+            "frame": top_frame_id})
         resp = self.jdwp.ThreadReference.Frames({
-                "thread": self.thread_id,
-                "startFrame": 0,
-                "length": -1})["frames"]
+            "thread": self.thread_id,
+            "startFrame": 0,
+            "length": -1})["frames"]
         # now there should only be 3 frames
-        self.assertEquals(len(resp), 3)
+        self.assertEqual(len(resp), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

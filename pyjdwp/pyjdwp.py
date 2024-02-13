@@ -1,12 +1,18 @@
+import os
 import logging
-import pkg_resources
-import pyparsing
-import Queue
+import queue
 import re
 import socket
 import struct
 import threading
 import time
+
+import importlib.resources as pkg_resources
+from importlib import resources
+
+import pyparsing
+
+from pyjdwp.sexpr_helpers import QuotesFixer
 
 class Error(Exception):
     """Pyjdwp module-level error"""
@@ -82,13 +88,14 @@ class Jdwp(object):
         self.__event_cbs = []
         self.__conn = JdwpConnection(host, port, self.handle_packet)
         self.__replies = {}
-        self.__events = Queue.Queue()
+        self.__events = queue.Queue()
         # background thread for calling self.__event_cbs as new events come in.
         # we use a separate thread for this so that JdwpConnection's
         # __reader_thread need not block while we handle events.
         self.__notifier_thread = threading.Thread(
                 target = self.__event_notify_loop, name = "jdwp_event_notifier")
-        self.__notifier_thread.setDaemon(True)
+        # self.__notifier_thread.setDaemon(True)
+        self.__notifier_thread.daemon = True
         logging.info("Jdwp object created")
 
     def register_event_callback(self, event_cb):
@@ -157,7 +164,7 @@ class Jdwp(object):
         return command.decode(event_payload)
 
     def __await_reply(self, req_id):
-        """Blocks until a reply is received for "req_id"; raises pyjdwp.Error
+        """Blocks until a reply is received for "req_id"; raises pyjdb.Error
         if err != 0, returns reply otherwise"""
         start_time = time.time()
         while req_id not in self.__replies:
@@ -184,10 +191,35 @@ class Jdwp(object):
         req_id = self.__request_id_generator.next_id
         self.__conn.send(req_id, 1, 1)
         version_data = self.__await_reply(req_id)
-        desc_len = 4 + struct.unpack(">I", version_data[0:4])[0]
-        minor_version = struct.unpack(
-                ">I", version_data[desc_len + 4: desc_len + 8])[0]
+        minor_version = self.decode_hardcoded_version_reply(version_data)[1]
         return minor_version
+
+    def decode_hardcoded_version_reply(self, reply_data):
+
+        current_index = 0
+
+        # Decode the first string
+        first_str_length = struct.unpack_from(">I", reply_data, current_index)[0]
+        current_index += 4  # Move past the length integer
+        description = struct.unpack_from(f">{first_str_length}s", reply_data, current_index)[0].decode('utf-8')
+        current_index += first_str_length
+
+        # Decode the two integers
+        jdwpMajor, jdwpMinor = struct.unpack_from(">II", reply_data, current_index)
+        current_index += 8  # Move past the two integers
+
+        # Decode the second string
+        second_str_length = struct.unpack_from(">I", reply_data, current_index)[0]
+        current_index += 4
+        vmVersion = struct.unpack_from(f">{second_str_length}s", reply_data, current_index)[0].decode('utf-8')
+        current_index += second_str_length
+
+        # Decode the third string
+        third_str_length = struct.unpack_from(">I", reply_data, current_index)[0]
+        current_index += 4
+        vmName = struct.unpack_from(f">{third_str_length}s", reply_data, current_index)[0].decode('utf-8')
+
+        return description, jdwpMajor, jdwpMinor, vmVersion, vmName
 
     def __hardcoded_id_sizes_request(self):
         req_id = self.__request_id_generator.next_id
@@ -222,7 +254,8 @@ class JdwpConnection(object):
         # self.__listening == True
         self.__reader_thread = threading.Thread(
                 target = self.__listen, name = "jdwp_listener")
-        self.__reader_thread.setDaemon(True)
+        # self.__reader_thread.setDaemon(True)
+        self.__reader_thread.daemon = True
 
     def initialize(self):
         logging.info("Initializing socket connection to jdwp host")
@@ -285,27 +318,39 @@ class JdwpConnection(object):
                 msg.extend(chunk)
                 remaining -= len(chunk)
             # TODO(cgs): why do we need to do this string voodoo?
-            payload = "".join([chr(x) for x in msg])
-            self.__packet_callback(req_id, flags, err, payload)
+            # payload = "".join([chr(x) for x in msg])
+            self.__packet_callback(req_id, flags, err, msg)
 
 
 class JdwpSpec(object):
     def __init__(self, version, id_sizes):
-        spec_file_name = "specs/jdwp.spec_openjdk_%d" % version
-        jdwp_text = pkg_resources.resource_string(__name__, spec_file_name)
-        self.__clean_spec_text = re.sub("\s*=\s*", "=", jdwp_text)
-        self.__spec = GRAMMAR_JDWP_SPEC.parseString(self.__clean_spec_text)
-        self.id_sizes = id_sizes
-        self.command_sets = {}
-        self.constant_sets = {}
-        for entry in self.__spec:
-            if entry[0] == "ConstantSet":
-                constant_set = ConstantSet(entry)
-                self.constant_sets[constant_set.name] = constant_set
-        for entry in self.__spec:
-            if entry[0] == "CommandSet":
-                command_set = CommandSet(self, entry)
-                self.command_sets[command_set.name] = command_set
+        original_cwd = os.getcwd()
+        try:
+            # os.chdir(os.path.dirname(__file__))
+            spec_file_name = f"jdwp.spec_openjdk_{version}"
+            # with pkg_resources.open_text(__package__ + '.specs', spec_file_name) as file:
+            with resources.files(f'{__package__}.specs').joinpath(spec_file_name).open() as file:
+                # with open(spec_file_name, 'r', encoding='utf-8') as file:
+                jdwp_text = file.read()
+                clean_spec_text = re.sub(r"\s*=\s*", "=", jdwp_text)
+                clean_spec_text = QuotesFixer().process_text(clean_spec_text)
+                self.__clean_spec_text = clean_spec_text
+                self.__spec = GRAMMAR_JDWP_SPEC.parseString(self.__clean_spec_text)
+                self.id_sizes = id_sizes
+                self.command_sets = {}
+                self.constant_sets = {}
+                for entry in self.__spec:
+                    if entry[0] == "ConstantSet":
+                        constant_set = ConstantSet(entry)
+                        self.constant_sets[constant_set.name] = constant_set
+                for entry in self.__spec:
+                    if entry[0] == "CommandSet":
+                        command_set = CommandSet(self, entry)
+                        self.command_sets[command_set.name] = command_set
+        except FileNotFoundError:
+            print(f"File {spec_file_name} not found.")
+        # finally:
+            # os.chdir(original_cwd)
 
     def lookup_command(self, command_set_name, command_name):
         if command_set_name not in self.command_sets:
@@ -364,6 +409,7 @@ class JdwpSpec(object):
     def lookup_value_size_by_type_tag(self, type_tag):
         # These are copied from the *comments* of the TagType constant_set in
         # the spec
+
         lookup_fn_by_type_tag = {
             '[': lambda id_sizes: id_sizes["objectIDSize"],  # ARRAY
             'B': lambda id_sizes: 1,  # BYTE
@@ -541,8 +587,8 @@ class String(object):
         strlen = struct.unpack(">I", data[0 : 4])[0]
         fmt = str(strlen) + "s"
         subdata = data[4 : 4 + strlen]
-        string_value = struct.unpack(fmt, subdata)[0].decode("UTF-8")
-        accum[self.name] = string_value
+        string_value =  struct.unpack(fmt, subdata)[0]
+        accum[self.name] = string_value.decode('utf-8')
         return data[4+strlen:], accum
 
     def encode(self, data, accum):
@@ -550,7 +596,7 @@ class String(object):
         strlen = len(value)
         fmt = str(strlen) + "s"
         accum += struct.pack(">I", len(value))
-        accum += bytearray(value, "UTF-8")
+        accum += bytearray(value, "utf-8")
         return data, accum
 
 
@@ -561,7 +607,9 @@ class Value(object):
 
     def decode(self, data, accum=None):
         # first byte is the tag type
-        type_tag = data[0]
+        # if isinstance(data, bytes):
+        #     data.decode('utf-8')
+        type_tag = (data[0:1]).decode("utf-8")
         value_len = self.spec.lookup_value_size_by_type_tag(type_tag)
         void_tag = self.spec.lookup_constant("Tag", "VOID").value
         if type_tag == void_tag:
@@ -581,7 +629,7 @@ class Value(object):
 
     def encode(self, data, accum):
         value = data[self.name]
-        accum += bytearray(value["typeTag"])
+        accum += bytearray(value["typeTag"], "utf-8")
         accum += self.spec.encode_value_bytes_for_type_tag(
                  value["typeTag"], value["value"])
         return data, accum
@@ -606,7 +654,7 @@ class TaggedObject(object):
     def decode(self, data, accum=None):
         if accum is None:
             accum = {}
-        type_tag = data[0]
+        type_tag = (data[0:1]).decode("utf-8")
         object_id_size = self.spec.id_sizes["objectIDSize"]
         object_id = struct.unpack(
                 ">" + STRUCT_FMTS_BY_SIZE_UNSIGNED[object_id_size],
@@ -625,7 +673,7 @@ class TypedSequence(object):
     def decode(self, data, accum=None):
         if accum is None:
             accum = {}
-        type_tag = data[0]
+        type_tag = (data[0:1]).decode("utf-8")
         entry_count = struct.unpack(">I", data[1:5])[0]
         value_len = self.spec.lookup_value_size_by_type_tag(type_tag)
         if STRUCT_FMT_BY_TYPE_TAG[type_tag] == "?":
@@ -787,24 +835,31 @@ class ErrorRef(object):
     self.name = error[1]
 
 
+
+
 SPEC_GRAMMAR_OPEN_PAREN = pyparsing.Literal("(").suppress()
 SPEC_GRAMMAR_CLOSE_PAREN = pyparsing.Literal(")").suppress()
+
 SPEC_GRAMMAR_QUOTED_STRING = pyparsing.dblQuotedString
 SPEC_GRAMMAR_QUOTED_STRING = SPEC_GRAMMAR_QUOTED_STRING.suppress()
+
 SPEC_GRAMMAR_SPEC_STRING = pyparsing.OneOrMore(SPEC_GRAMMAR_QUOTED_STRING)
 SPEC_GRAMMAR_S_EXP = pyparsing.Forward()
-SPEC_GRAMMAR_STRING = SPEC_GRAMMAR_SPEC_STRING | pyparsing.Regex("([^()\s])+")
+SPEC_GRAMMAR_STRING = SPEC_GRAMMAR_SPEC_STRING | pyparsing.Regex(r"([^()\s])+")
 SPEC_GRAMMAR_S_EXP_LIST = pyparsing.Group(SPEC_GRAMMAR_OPEN_PAREN +
     pyparsing.ZeroOrMore(SPEC_GRAMMAR_S_EXP) + SPEC_GRAMMAR_CLOSE_PAREN)
 SPEC_GRAMMAR_S_EXP << ( SPEC_GRAMMAR_STRING | SPEC_GRAMMAR_S_EXP_LIST )
 GRAMMAR_JDWP_SPEC = pyparsing.OneOrMore(SPEC_GRAMMAR_S_EXP)
+
+
+
 
 ACCESS_MODIFIER_PUBLIC = 0x0001
 ACCESS_MODIFIER_FINAL = 0x0010
 ACCESS_MODIFIER_SUPER = 0x0020 # old invokespecial instruction semantics (Java 1.0x?)
 ACCESS_MODIFIER_INTERFACE = 0x0200
 ACCESS_MODIFIER_ABSTRACT = 0x0400
-ACCESS_MODIFIER_SYNTHETIC = 0x1000 
+ACCESS_MODIFIER_SYNTHETIC = 0x1000
 ACCESS_MODIFIER_ANNOTATION = 0x2000
 ACCESS_MODIFIER_ENUM = 0x4000
 ACCESS_MODIFIERS = {

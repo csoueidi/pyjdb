@@ -1,8 +1,5 @@
-"""Test package for pyjdb, the python java debugger library"""
-import logging 
+"""Test package for src, the python java debugger library"""
 import os
-import pprint
-import pyjdb
 import signal
 import socket
 import subprocess
@@ -10,12 +7,13 @@ import tempfile
 import time
 import unittest
 
+from pyjdwp.pyjdb import Pyjdb
 
 TEST_TMP_DIRNAME = tempfile.mkdtemp()
 
 
 class PyjdbTestBase(unittest.TestCase):
-    """Base class for pyjdb package tests.
+    """Base class for src package tests.
     
     Handles the work of compiling the test code once for each test class, and
     starting the java process for each test case. Namely, each test class
@@ -79,6 +77,8 @@ class PyjdbTestBase(unittest.TestCase):
                 return True
             except socket.error as e:
                 pass
+            finally:
+                sock.close()
             num_tries += 1
             time.sleep(sleep)
         return False
@@ -104,9 +104,9 @@ class PyjdbTestBase(unittest.TestCase):
         self.devnull = open(subprocess.os.devnull, "r")
         self.test_target_subprocess = subprocess.Popen(
             ["/usr/bin/java", "-cp", TEST_TMP_DIRNAME, jvm_args,
-                    self.debug_target_main_class]#,
-            #stdout = self.devnull,
-            #stderr = self.devnull
+                    self.debug_target_main_class],
+            stdout = self.devnull,
+            stderr = self.devnull
             )
         try:
             self.wait_for_server("localhost", port)
@@ -115,7 +115,7 @@ class PyjdbTestBase(unittest.TestCase):
             # won't be called if we fail) and bail.
             self.test_target_subprocess.send_signal(signal.SIGKILL)
             raise e
-        self.pyjdb = pyjdb.Pyjdb("localhost", port)
+        self.pyjdb = Pyjdb("localhost", port)
         self.pyjdb.initialize();
 
     def tearDown(self):
@@ -127,9 +127,10 @@ class PyjdbTestBase(unittest.TestCase):
         self.devnull.close()
 
     def test_set_breakpoint_at_line(self):
-        self.pyjdb.set_breakpoint_at_line("PyjdbTest.java", 49)
+        self.pyjdb.set_breakpoint_at_line("PyjdbTest.java", 19)
         self.pyjdb.resume()
         time.sleep(5)
+        print("set break point done")
 
 
 if __name__ == "__main__":
